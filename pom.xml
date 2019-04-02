@@ -3,11 +3,11 @@
 
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>org.matsim</groupId>
-	<artifactId>matsim-example-project</artifactId>
+	<artifactId>matsim-calibration</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 
-	<name>MATSim example project</name>
-	<description>MATSim example project</description>
+	<name>MATSim Calibration library</name>
+	<description>Code to aid in calibrating MATSim to various statistics. Built from MATSim Example Project</description>
 
 	<properties>
 	  <!-- release> -->
@@ -63,11 +63,16 @@
 		</dependency>
 
 		<!--to get ExamplesUtils. commented out since it is another dependency, but in general this is recommended. -->
-		<!--<dependency>-->
-		<!--	<groupId>org.matsim</groupId>-->
-		<!--	<artifactId>matsim-examples</artifactId>-->
-		<!--	<version>${matsim.version}</version>-->
-		<!--</dependency>-->
+		<dependency>
+			<groupId>org.matsim</groupId>
+			<artifactId>matsim-examples</artifactId>
+			<version>${matsim.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.google.code.gson</groupId>
+			<artifactId>gson</artifactId>
+			<version>2.8.5</version>
+		</dependency>
 
 	</dependencies>
 
