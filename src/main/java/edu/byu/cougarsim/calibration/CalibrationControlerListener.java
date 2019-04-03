@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import org.apache.log4j.Logger;
 import org.matsim.api.core.v01.population.*;
 import org.matsim.core.config.groups.ControlerConfigGroup;
+import org.matsim.core.config.groups.PlanCalcScoreConfigGroup;
 import org.matsim.core.controler.events.IterationEndsEvent;
 import org.matsim.core.controler.events.ShutdownEvent;
 import org.matsim.core.controler.events.StartupEvent;
@@ -12,13 +13,14 @@ import org.matsim.core.controler.listener.IterationEndsListener;
 import org.matsim.core.controler.listener.ShutdownListener;
 import org.matsim.core.controler.listener.StartupListener;
 import org.matsim.core.router.*;
-import org.matsim.core.utils.io.IOUtils;
 
 import javax.inject.Inject;
 import javax.inject.Provider;
 import java.io.*;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class CalibrationControlerListener implements StartupListener, IterationEndsListener, ShutdownListener {
 
@@ -33,22 +35,25 @@ public class CalibrationControlerListener implements StartupListener, IterationE
     final private Population population;
     final private ControlerConfigGroup controlerConfigGroup;
     private final Provider<TripRouter> tripRouterFactory;
+    private final PlanCalcScoreConfigGroup planCalcScoreConfigGroup;
 
     private MainModeIdentifier mainModeIdentifier;
     private StageActivityTypes stageActivities;
+    private ModeChoiceCoefficientsUpdater modeUpdater;
 
 
 
     @Inject
-    public CalibrationControlerListener(ControlerConfigGroup controlerConfigGroup,
+    public CalibrationControlerListener(ControlerConfigGroup controlerConfigGroup, PlanCalcScoreConfigGroup planCalcScoreConfigGroup,
                                         Population population1, Provider<TripRouter> tripRouterFactory) {
         this.controlerConfigGroup = controlerConfigGroup;
         this.population = population1;
         mainModeIdentifier = null;
         this.tripRouterFactory = tripRouterFactory;
         this.outFile = new File(controlerConfigGroup.getOutputDirectory(), FILENAME_PURPOSEMODESTATS);
+        this.modeUpdater = new ModeChoiceCoefficientsUpdater();
+        this.planCalcScoreConfigGroup = planCalcScoreConfigGroup;
     }
-
 
     /**
      * At startup, need to initialize some of the router-based trip statistics calculators
@@ -60,7 +65,16 @@ public class CalibrationControlerListener implements StartupListener, IterationE
         TripRouter tripRouter = tripRouterFactory.get();
         this.mainModeIdentifier = tripRouter.getMainModeIdentifier();
         this.stageActivities = tripRouter.getStageActivityTypes();
+
+        // load the mode score parameters
+        Collection<String> modes = planCalcScoreConfigGroup.getAllModes();
+        for(String mode: modes){
+            Double constant = planCalcScoreConfigGroup.getOrCreateModeParams(mode).getConstant();
+            modeUpdater.setConstant(mode, constant);
+        }
+
     }
+
 
     /**
      * At the end of each iteration, collect the mode split by trip purpose
@@ -71,8 +85,32 @@ public class CalibrationControlerListener implements StartupListener, IterationE
 
         HashMap<String, HashMap<String, Integer>> tripPurpose =
                 collectTripPurposeInfo(iterationEndsEvent);
-        log.info(gson.toJson(tripPurpose));
         this.iterationPurposeCount.put(iterationEndsEvent.getIteration(), tripPurpose);
+
+        // Update constants
+        Map<String, Double> modelShares = calculateModeShares(tripPurpose.get("hbw"));
+        modeUpdater.updateConstants(calculateModeShares(tripPurpose.get("hbw")));
+        Map<String, Double> updatedConstants = modeUpdater.getConstants();
+
+        log.info("Updated mode constants: ");
+        log.info(gson.toJson(updatedConstants));
+
+    }
+
+
+
+    private Map<String, Double> calculateModeShares(HashMap<String, Integer> tripsByMode) {
+        // get total number of trips
+        Integer totalTrips = tripsByMode.values().stream().reduce(0, Integer::sum);
+        Map<String, Double> modeShares = new HashMap<>();
+
+        for(Map.Entry<String, Integer> modeTrips:tripsByMode.entrySet()) {
+            Double share = (1.0 * modeTrips.getValue() / totalTrips);
+            modeShares.putIfAbsent(modeTrips.getKey(), share);
+        }
+        log.info("Home-Based Work mode split: ");
+        log.info(gson.toJson(modeShares));
+        return modeShares;
     }
 
     /**
@@ -127,7 +165,6 @@ public class CalibrationControlerListener implements StartupListener, IterationE
 
     @Override
     public void notifyShutdown(ShutdownEvent shutdownEvent) {
-        log.info(gson.toJson(iterationPurposeCount));
         try (Writer writer = new FileWriter(outFile)){
             gson.toJson(iterationPurposeCount, writer);
         } catch (IOException e) {
