@@ -18,16 +18,19 @@
  * *********************************************************************** */
 package org.matsim.run;
 
+import edu.byu.cougarsim.calibration.CalibrationControlerListener;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.core.config.Config;
 import org.matsim.core.config.ConfigUtils;
+import org.matsim.core.controler.AbstractModule;
 import org.matsim.core.controler.Controler;
 import org.matsim.core.controler.OutputDirectoryHierarchy.OverwriteFileSetting;
 import org.matsim.core.gbl.Gbl;
 import org.matsim.core.scenario.ScenarioUtils;
 
 /**
- * @author nagel
+ * This runner includes the calibration controler listener
+ * @author gregmacfarlane
  *
  */
 public class RunMatsim {
@@ -41,6 +44,7 @@ public class RunMatsim {
 	static void run(Config config) {
 		
 		// possibly modify config here
+		config.controler().setOverwriteFileSetting(OverwriteFileSetting.deleteDirectoryIfExists);
 		
 		// ---
 		
@@ -51,9 +55,15 @@ public class RunMatsim {
 		// ---
 		
 		Controler controler = new Controler( scenario ) ;
-		
+
 		// possibly modify controler here
-		
+		controler.addOverridingModule(new AbstractModule() {
+			@Override
+			public void install() {
+				//add an instance of this class as ControlerListener
+				this.addControlerListenerBinding().to(CalibrationControlerListener.class);
+			}
+		});
 		// ---
 		
 		controler.run();
