@@ -6,6 +6,7 @@ import org.apache.log4j.Logger;
 import org.matsim.api.core.v01.population.*;
 import org.matsim.core.config.groups.ControlerConfigGroup;
 import org.matsim.core.config.groups.PlanCalcScoreConfigGroup;
+import org.matsim.core.controler.OutputDirectoryHierarchy;
 import org.matsim.core.controler.events.IterationEndsEvent;
 import org.matsim.core.controler.events.ShutdownEvent;
 import org.matsim.core.controler.events.StartupEvent;
@@ -13,6 +14,8 @@ import org.matsim.core.controler.listener.IterationEndsListener;
 import org.matsim.core.controler.listener.ShutdownListener;
 import org.matsim.core.controler.listener.StartupListener;
 import org.matsim.core.router.*;
+import org.matsim.core.utils.io.IOUtils;
+import sun.nio.ch.IOUtil;
 
 import javax.inject.Inject;
 import javax.inject.Provider;
@@ -25,7 +28,10 @@ import java.util.Map;
 public class CalibrationControlerListener implements StartupListener, IterationEndsListener, ShutdownListener {
 
     public static final String FILENAME_PURPOSEMODESTATS = "purpose_and_mode.json";
+    public static final String FILENAME_COEFFICIENTVALUES = "coefficient_values.csv";
     public File outFile;
+    public BufferedWriter constantsOut;
+    public String constantsFileName;
 
     private static final Logger log = Logger.getLogger(CalibrationControlerListener.class);
     HashMap<Integer, HashMap<String, HashMap<String, Integer>>> iterationPurposeCount = new HashMap<>();
@@ -45,6 +51,7 @@ public class CalibrationControlerListener implements StartupListener, IterationE
 
     @Inject
     public CalibrationControlerListener(ControlerConfigGroup controlerConfigGroup, PlanCalcScoreConfigGroup planCalcScoreConfigGroup,
+                                        OutputDirectoryHierarchy controlerIO,
                                         Population population1, Provider<TripRouter> tripRouterFactory) {
         this.controlerConfigGroup = controlerConfigGroup;
         this.population = population1;
@@ -53,6 +60,10 @@ public class CalibrationControlerListener implements StartupListener, IterationE
         this.outFile = new File(controlerConfigGroup.getOutputDirectory(), FILENAME_PURPOSEMODESTATS);
         this.modeUpdater = new ModeChoiceCoefficientsUpdater();
         this.planCalcScoreConfigGroup = planCalcScoreConfigGroup;
+
+        this.constantsFileName = controlerIO.getOutputFilename(FILENAME_COEFFICIENTVALUES);
+        this.constantsOut = IOUtils.getBufferedWriter(constantsFileName);
+
     }
 
     /**
@@ -73,6 +84,15 @@ public class CalibrationControlerListener implements StartupListener, IterationE
             modeUpdater.setConstant(mode, constant);
         }
 
+        try {
+            this.constantsOut.write("Iteration");
+            for(String mode: modes){
+                this.constantsOut.write(", " + mode);
+            }
+            this.constantsOut.write("\n");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
 
@@ -82,10 +102,11 @@ public class CalibrationControlerListener implements StartupListener, IterationE
      */
     @Override
     public void notifyIterationEnds(IterationEndsEvent iterationEndsEvent) {
+        Integer iterationNo = iterationEndsEvent.getIteration();
 
         HashMap<String, HashMap<String, Integer>> tripPurpose =
                 collectTripPurposeInfo(iterationEndsEvent);
-        this.iterationPurposeCount.put(iterationEndsEvent.getIteration(), tripPurpose);
+        this.iterationPurposeCount.put(iterationNo, tripPurpose);
 
         // Update constants
         Map<String, Double> modelShares = calculateModeShares(tripPurpose.get("hbw"));
@@ -94,6 +115,16 @@ public class CalibrationControlerListener implements StartupListener, IterationE
 
         log.info("Updated mode constants: ");
         log.info(gson.toJson(updatedConstants));
+
+        try {
+            this.constantsOut.write(iterationNo.toString());
+            for(Double entry:updatedConstants.values()) {
+                this.constantsOut.write(", " + entry);
+            }
+            this.constantsOut.write("\n");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
 
     }
 
@@ -167,6 +198,12 @@ public class CalibrationControlerListener implements StartupListener, IterationE
     public void notifyShutdown(ShutdownEvent shutdownEvent) {
         try (Writer writer = new FileWriter(outFile)){
             gson.toJson(iterationPurposeCount, writer);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        try {
+            this.constantsOut.close();
         } catch (IOException e) {
             e.printStackTrace();
         }
