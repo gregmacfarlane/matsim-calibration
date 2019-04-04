@@ -110,8 +110,17 @@ public class CalibrationControlerListener implements StartupListener, IterationE
 
         // Update constants
         Map<String, Double> modelShares = calculateModeShares(tripPurpose.get("hbw"));
-        modeUpdater.updateConstants(calculateModeShares(tripPurpose.get("hbw")));
+
+        if(iterationNo > 5) {
+            modeUpdater.updateConstants(calculateModeShares(tripPurpose.get("hbw")));
+        }
+
         Map<String, Double> updatedConstants = modeUpdater.getConstants();
+
+        PlanCalcScoreConfigGroup.ModeParams params = planCalcScoreConfigGroup.getOrCreateModeParams("car");
+        //params.setConstant(updatedConstants.get("car"));
+        //planCalcScoreConfigGroup.addModeParams(params);
+
 
         log.info("Updated mode constants: ");
         log.info(gson.toJson(updatedConstants));
