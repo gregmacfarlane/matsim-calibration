@@ -20,24 +20,23 @@ import sun.nio.ch.IOUtil;
 import javax.inject.Inject;
 import javax.inject.Provider;
 import java.io.*;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 public class CalibrationControlerListener implements StartupListener, IterationEndsListener, ShutdownListener {
 
-    public static final String FILENAME_PURPOSEMODESTATS = "purpose_and_mode.json";
     public static final String FILENAME_COEFFICIENTVALUES = "coefficient_values.csv";
-    public File outFile;
+    public static final String FILENAME_HBWFILE = "hbw_modeshare.csv";
+    public BufferedWriter hbwOut;
     public BufferedWriter constantsOut;
     public String constantsFileName;
+    public String hbwFileName;
 
     private static final Logger log = Logger.getLogger(CalibrationControlerListener.class);
     HashMap<Integer, HashMap<String, HashMap<String, Integer>>> iterationPurposeCount = new HashMap<>();
     private Gson gson = new GsonBuilder().setPrettyPrinting().create();
+    private Collection<String> modes = new ArrayList<>();
 
-    
+
     final private Population population;
     final private ControlerConfigGroup controlerConfigGroup;
     private final Provider<TripRouter> tripRouterFactory;
@@ -57,12 +56,13 @@ public class CalibrationControlerListener implements StartupListener, IterationE
         this.population = population1;
         mainModeIdentifier = null;
         this.tripRouterFactory = tripRouterFactory;
-        this.outFile = new File(controlerConfigGroup.getOutputDirectory(), FILENAME_PURPOSEMODESTATS);
         this.modeUpdater = new ModeChoiceCoefficientsUpdater();
         this.planCalcScoreConfigGroup = planCalcScoreConfigGroup;
 
         this.constantsFileName = controlerIO.getOutputFilename(FILENAME_COEFFICIENTVALUES);
+        this.hbwFileName = controlerIO.getOutputFilename(FILENAME_HBWFILE);
         this.constantsOut = IOUtils.getBufferedWriter(constantsFileName);
+        this.hbwOut = IOUtils.getBufferedWriter(hbwFileName);
 
     }
 
@@ -76,20 +76,17 @@ public class CalibrationControlerListener implements StartupListener, IterationE
         TripRouter tripRouter = tripRouterFactory.get();
         this.mainModeIdentifier = tripRouter.getMainModeIdentifier();
         this.stageActivities = tripRouter.getStageActivityTypes();
-
-        // load the mode score parameters
-        Collection<String> modes = planCalcScoreConfigGroup.getAllModes();
-        for(String mode: modes){
-            Double constant = planCalcScoreConfigGroup.getOrCreateModeParams(mode).getConstant();
-            modeUpdater.setConstant(mode, constant);
-        }
+        this.modes = planCalcScoreConfigGroup.getAllModes();
 
         try {
-            this.constantsOut.write("Iteration");
+            this.hbwOut.write("Iteration");
+            this.hbwOut.write("Iteration");
             for(String mode: modes){
                 this.constantsOut.write(", " + mode);
+                this.hbwOut.write(", " + mode);
             }
             this.constantsOut.write("\n");
+            this.hbwOut.write("\n");
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -104,24 +101,18 @@ public class CalibrationControlerListener implements StartupListener, IterationE
     public void notifyIterationEnds(IterationEndsEvent iterationEndsEvent) {
         Integer iterationNo = iterationEndsEvent.getIteration();
 
-        HashMap<String, HashMap<String, Integer>> tripPurpose =
-                collectTripPurposeInfo(iterationEndsEvent);
-        this.iterationPurposeCount.put(iterationNo, tripPurpose);
+        HashMap<String, HashMap<String, Integer>> tripPurpose = collectTripPurposeInfo();
 
-        // Update constants
+        // Calculate the mode shares for home-based work trips
         Map<String, Double> modelShares = calculateModeShares(tripPurpose.get("hbw"));
-        modeUpdater.updateConstants(calculateModeShares(tripPurpose.get("hbw")));
-        Map<String, Double> updatedConstants = modeUpdater.getConstants();
 
-        log.info("Updated mode constants: ");
-        log.info(gson.toJson(updatedConstants));
 
         try {
-            this.constantsOut.write(iterationNo.toString());
-            for(Double entry:updatedConstants.values()) {
-                this.constantsOut.write(", " + entry);
+            this.hbwOut.write(iterationNo.toString());
+            for(String mode : modes ) {
+                this.hbwOut.write(", " + modelShares.getOrDefault(mode, 0.0));
             }
-            this.constantsOut.write("\n");
+            this.hbwOut.write("\n");
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -148,10 +139,9 @@ public class CalibrationControlerListener implements StartupListener, IterationE
      * Loop through the population plans at the end of an iteration, get the main mode and the purpose of the
      * activity, and store the counts for each kind of trip in a HashMap. Note that the mode is the "planned" mode,
      * rather than the "executed" mode. As an example, the 'transit_walk' trips are coded as 'pt'.
-     * @param iterationEndsEvent
      * @return A map indexed by purpose and mode, with the count of trips in the most recently selected population plans
      */
-    private HashMap<String, HashMap<String, Integer>> collectTripPurposeInfo(final IterationEndsEvent iterationEndsEvent){
+    private HashMap<String, HashMap<String, Integer>> collectTripPurposeInfo(){
         HashMap<String, HashMap<String, Integer>> purposeAndModeCount = new HashMap<>();
 
         //Initialize dictionary
@@ -196,14 +186,29 @@ public class CalibrationControlerListener implements StartupListener, IterationE
 
     @Override
     public void notifyShutdown(ShutdownEvent shutdownEvent) {
-        try (Writer writer = new FileWriter(outFile)){
-            gson.toJson(iterationPurposeCount, writer);
-        } catch (IOException e) {
-            e.printStackTrace();
+
+        // Get the scenario mode score parameters
+        for(String mode: modes){
+            Double constant = planCalcScoreConfigGroup.getOrCreateModeParams(mode).getConstant();
+            modeUpdater.setConstant(mode, constant);
         }
 
+        HashMap<String, HashMap<String, Integer>> tripPurpose = collectTripPurposeInfo();
+
+        modeUpdater.updateConstants(calculateModeShares(tripPurpose.get("hbw")));
+        Map<String, Double> updatedConstants = modeUpdater.getConstants();
+
+        log.info("Updated mode constants: ");
+        log.info(gson.toJson(updatedConstants));
+
+
         try {
+            this.constantsOut.write(controlerConfigGroup.getLastIteration());
+            for(String mode:modes){
+                this.constantsOut.write(", " + updatedConstants.get(mode).toString());
+            }
             this.constantsOut.close();
+            this.hbwOut.close();
         } catch (IOException e) {
             e.printStackTrace();
         }
