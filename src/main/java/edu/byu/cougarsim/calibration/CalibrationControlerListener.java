@@ -30,16 +30,21 @@ public class CalibrationControlerListener implements StartupListener, IterationE
     private TransitBoardingsEventHandler eventHandler;
 
     @Inject
+    private TravelTimeEventHandler timeEventHandler;
+
+    @Inject
     EventsManager events;
 
     private static final String FILENAME_COEFFICIENTVALUES = "coefficient_values.csv";
     private static final String FILENAME_HBWFILE = "hbw_modeshare.csv";
     private static final String FILENAME_BOARDINGS = "transitline_boardings.csv";
+    private static final String FILENAME_TIMEBINS = "timebins.csv";
     private BufferedWriter hbwOut;
     private BufferedWriter constantsOut;
     private String constantsFileName;
     private String hbwFileName;
     private File transitFileName;
+    private File timeFileName;
 
     private static final Logger log = Logger.getLogger(CalibrationControlerListener.class);
     HashMap<Integer, HashMap<String, HashMap<String, Integer>>> iterationPurposeCount = new HashMap<>();
@@ -75,8 +80,10 @@ public class CalibrationControlerListener implements StartupListener, IterationE
         this.constantsOut = IOUtils.getBufferedWriter(constantsFileName);
         this.hbwOut = IOUtils.getBufferedWriter(hbwFileName);
         this.transitFileName = new File(controlerIO.getOutputFilename(FILENAME_BOARDINGS));
+        this.timeFileName = new File(controlerIO.getOutputFilename(FILENAME_TIMEBINS));
 
         this.eventHandler = new TransitBoardingsEventHandler(scenario);
+        this.timeEventHandler = new TravelTimeEventHandler();
         this.lastIteration = controlerConfigGroup.getLastIteration();
     }
 
@@ -92,6 +99,7 @@ public class CalibrationControlerListener implements StartupListener, IterationE
         this.stageActivities = tripRouter.getStageActivityTypes();
         this.modes = planCalcScoreConfigGroup.getAllModes();
         this.events.addHandler(eventHandler);
+        this.events.addHandler(timeEventHandler);
 
         try {
             this.hbwOut.write("Iteration");
@@ -136,6 +144,7 @@ public class CalibrationControlerListener implements StartupListener, IterationE
 
         if(!iterationNo.equals(lastIteration)) {
            eventHandler.reset(iterationNo);
+           timeEventHandler.reset(iterationNo);
         }
 
     }
@@ -231,6 +240,7 @@ public class CalibrationControlerListener implements StartupListener, IterationE
             this.constantsOut.close();
             this.hbwOut.close();
             eventHandler.writeLineBoardings(this.transitFileName);
+            timeEventHandler.writeTimeBins(this.timeFileName);
         } catch (IOException e) {
             e.printStackTrace();
         }
