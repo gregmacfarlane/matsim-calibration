@@ -18,6 +18,8 @@
  * *********************************************************************** */
 package org.matsim.run;
 
+import ch.sbb.matsim.mobsim.qsim.SBBQSimModule;
+import ch.sbb.matsim.routing.pt.raptor.SwissRailRaptorModule;
 import edu.byu.cougarsim.calibration.CalibrationControlerListener;
 import edu.byu.cougarsim.calibration.TransitBoardingsEventHandler;
 import org.matsim.api.core.v01.Scenario;
@@ -57,10 +59,12 @@ public class RunMatsim {
 		
 		Controler controler = new Controler( scenario ) ;
 
-		// possibly modify controler here
+		// Add events handler and calibration adjustment listener
 		controler.addOverridingModule(new AbstractModule() {
 			@Override
 			public void install() {
+				//install(new SBBQSimModule());
+				//install(new SwissRailRaptorModule());
 				//add an instance of this class as ControlerListener
 				this.addControlerListenerBinding().to(CalibrationControlerListener.class);
 				this.bind(TransitBoardingsEventHandler.class);
