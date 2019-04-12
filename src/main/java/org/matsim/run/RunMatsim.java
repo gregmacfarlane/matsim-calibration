@@ -19,6 +19,7 @@
 package org.matsim.run;
 
 import edu.byu.cougarsim.calibration.CalibrationControlerListener;
+import edu.byu.cougarsim.calibration.TransitBoardingsEventHandler;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.core.config.Config;
 import org.matsim.core.config.ConfigUtils;
@@ -62,6 +63,7 @@ public class RunMatsim {
 			public void install() {
 				//add an instance of this class as ControlerListener
 				this.addControlerListenerBinding().to(CalibrationControlerListener.class);
+				this.bind(TransitBoardingsEventHandler.class);
 			}
 		});
 		// ---

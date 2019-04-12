@@ -3,7 +3,9 @@ package edu.byu.cougarsim.calibration;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import org.apache.log4j.Logger;
+import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.population.*;
+import org.matsim.core.api.experimental.events.EventsManager;
 import org.matsim.core.config.groups.ControlerConfigGroup;
 import org.matsim.core.config.groups.PlanCalcScoreConfigGroup;
 import org.matsim.core.controler.OutputDirectoryHierarchy;
@@ -24,17 +26,26 @@ import java.util.*;
 
 public class CalibrationControlerListener implements StartupListener, IterationEndsListener, ShutdownListener {
 
-    public static final String FILENAME_COEFFICIENTVALUES = "coefficient_values.csv";
-    public static final String FILENAME_HBWFILE = "hbw_modeshare.csv";
-    public BufferedWriter hbwOut;
-    public BufferedWriter constantsOut;
-    public String constantsFileName;
-    public String hbwFileName;
+    @Inject
+    private TransitBoardingsEventHandler eventHandler;
+
+    @Inject
+    EventsManager events;
+
+    private static final String FILENAME_COEFFICIENTVALUES = "coefficient_values.csv";
+    private static final String FILENAME_HBWFILE = "hbw_modeshare.csv";
+    private static final String FILENAME_BOARDINGS = "transitline_boardings.csv";
+    private BufferedWriter hbwOut;
+    private BufferedWriter constantsOut;
+    private String constantsFileName;
+    private String hbwFileName;
+    private File transitFileName;
 
     private static final Logger log = Logger.getLogger(CalibrationControlerListener.class);
     HashMap<Integer, HashMap<String, HashMap<String, Integer>>> iterationPurposeCount = new HashMap<>();
     private Gson gson = new GsonBuilder().setPrettyPrinting().create();
     private Collection<String> modes = new ArrayList<>();
+    private Integer lastIteration;
 
 
     final private Population population;
@@ -50,7 +61,7 @@ public class CalibrationControlerListener implements StartupListener, IterationE
 
     @Inject
     public CalibrationControlerListener(ControlerConfigGroup controlerConfigGroup, PlanCalcScoreConfigGroup planCalcScoreConfigGroup,
-                                        OutputDirectoryHierarchy controlerIO,
+                                        OutputDirectoryHierarchy controlerIO, Scenario scenario,
                                         Population population1, Provider<TripRouter> tripRouterFactory) {
         this.controlerConfigGroup = controlerConfigGroup;
         this.population = population1;
@@ -63,7 +74,10 @@ public class CalibrationControlerListener implements StartupListener, IterationE
         this.hbwFileName = controlerIO.getOutputFilename(FILENAME_HBWFILE);
         this.constantsOut = IOUtils.getBufferedWriter(constantsFileName);
         this.hbwOut = IOUtils.getBufferedWriter(hbwFileName);
+        this.transitFileName = new File(controlerIO.getOutputFilename(FILENAME_BOARDINGS));
 
+        this.eventHandler = new TransitBoardingsEventHandler(scenario);
+        this.lastIteration = controlerConfigGroup.getLastIteration();
     }
 
     /**
@@ -77,6 +91,7 @@ public class CalibrationControlerListener implements StartupListener, IterationE
         this.mainModeIdentifier = tripRouter.getMainModeIdentifier();
         this.stageActivities = tripRouter.getStageActivityTypes();
         this.modes = planCalcScoreConfigGroup.getAllModes();
+        this.events.addHandler(eventHandler);
 
         try {
             this.hbwOut.write("Iteration");
@@ -90,6 +105,8 @@ public class CalibrationControlerListener implements StartupListener, IterationE
         } catch (IOException e) {
             e.printStackTrace();
         }
+
+
     }
 
 
@@ -102,10 +119,10 @@ public class CalibrationControlerListener implements StartupListener, IterationE
         Integer iterationNo = iterationEndsEvent.getIteration();
 
         HashMap<String, HashMap<String, Integer>> tripPurpose = collectTripPurposeInfo();
-
         // Calculate the mode shares for home-based work trips
         Map<String, Double> modelShares = calculateModeShares(tripPurpose.get("hbw"));
 
+        log.info("Total transit boardings: " + this.eventHandler.totalBoardings.toString());
 
         try {
             this.hbwOut.write(iterationNo.toString());
@@ -115,6 +132,10 @@ public class CalibrationControlerListener implements StartupListener, IterationE
             this.hbwOut.write("\n");
         } catch (IOException e) {
             e.printStackTrace();
+        }
+
+        if(!iterationNo.equals(lastIteration)) {
+           eventHandler.reset(iterationNo);
         }
 
     }
@@ -187,7 +208,7 @@ public class CalibrationControlerListener implements StartupListener, IterationE
     @Override
     public void notifyShutdown(ShutdownEvent shutdownEvent) {
 
-        // Get the scenario mode score parameters
+        // Get the scenario mode score parameters and print to file and log
         for(String mode: modes){
             Double constant = planCalcScoreConfigGroup.getOrCreateModeParams(mode).getConstant();
             modeUpdater.setConstant(mode, constant);
@@ -195,12 +216,12 @@ public class CalibrationControlerListener implements StartupListener, IterationE
 
         HashMap<String, HashMap<String, Integer>> tripPurpose = collectTripPurposeInfo();
 
+        log.info("Total transit boardings: " + eventHandler.totalBoardings.toString());
         modeUpdater.updateConstants(calculateModeShares(tripPurpose.get("hbw")));
         Map<String, Double> updatedConstants = modeUpdater.getConstants();
 
         log.info("Updated mode constants: ");
         log.info(gson.toJson(updatedConstants));
-
 
         try {
             this.constantsOut.write(controlerConfigGroup.getLastIteration());
@@ -209,9 +230,12 @@ public class CalibrationControlerListener implements StartupListener, IterationE
             }
             this.constantsOut.close();
             this.hbwOut.close();
+            eventHandler.writeLineBoardings(this.transitFileName);
         } catch (IOException e) {
             e.printStackTrace();
         }
+
+
 
     }
 
