@@ -18,14 +18,16 @@ import java.util.Map;
 public class TravelTimeEventHandler implements ActivityEndEventHandler, ActivityStartEventHandler {
 
     private Map<Id<Person>, ActivityEndEvent> lastActivityMap = new HashMap<>();
-    private Map<String, Integer[]> travelTimeBins = new HashMap<>();
+    private Map<String, CountBin> travelTimeBins = new HashMap<>();
     private String[] purposes = new String[]{"hbw", "hbo", "nhb"};
 
     private Integer totalBins = 20;
 
     @Inject
     public TravelTimeEventHandler() {
-        refreshBins();
+        for(String purpose:purposes) {
+            travelTimeBins.put(purpose, new CountBin(totalBins));
+        }
     }
 
     @Override
@@ -43,10 +45,9 @@ public class TravelTimeEventHandler implements ActivityEndEventHandler, Activity
         if(tripTime > (totalBins * 5) - 1){tripTime = (totalBins * 5) - 1;}
         int bin = (int) (tripTime / 5);
 
-        Integer[] bins = travelTimeBins.get(tripPurpose);
-        bins[bin]++;
-        travelTimeBins.put(tripPurpose, bins);
-
+        CountBin bins = travelTimeBins.get(tripPurpose);
+        bins.updateBin(bin);
+        travelTimeBins.replace(tripPurpose, bins);
         lastActivityMap.remove(startEvent.getPersonId());
     }
 
@@ -67,7 +68,7 @@ public class TravelTimeEventHandler implements ActivityEndEventHandler, Activity
 
     public void writeTimeBins(File timeBinFile) throws IOException {
         BufferedWriter writer = new BufferedWriter(new FileWriter(timeBinFile));
-        writer.write("Bin");
+        writer.write("Purpose");
 
         for(Integer i = 0; i < totalBins; i++) {
            writer.write(", " + i * 5);
@@ -76,10 +77,8 @@ public class TravelTimeEventHandler implements ActivityEndEventHandler, Activity
 
         for(String purpose: purposes){
             writer.write(purpose);
-            for(Integer bin:travelTimeBins.get(purpose)) {
-                writer.write(", " + bin);
-            }
-            writer.write("\n");
+            CountBin bins = travelTimeBins.get(purpose);
+            bins.writeBins(writer);
         }
         writer.close();
 
@@ -91,13 +90,9 @@ public class TravelTimeEventHandler implements ActivityEndEventHandler, Activity
     }
 
     private void refreshBins() {
-        Integer[] bins = new Integer[totalBins];
-        for(int i = 0; i < totalBins; i++) {
-            bins[i] = 0;
-        }
-
         for(String purpose: purposes){
-            travelTimeBins.put(purpose, bins);
+           CountBin bins = travelTimeBins.get(purpose);
+           bins.clearBins();
         }
 
     }
