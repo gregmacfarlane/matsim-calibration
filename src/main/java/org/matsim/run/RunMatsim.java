@@ -21,6 +21,7 @@ package org.matsim.run;
 import ch.sbb.matsim.mobsim.qsim.SBBQSimModule;
 import ch.sbb.matsim.routing.pt.raptor.SwissRailRaptorModule;
 import edu.byu.cougarsim.calibration.CalibrationControlerListener;
+import edu.byu.cougarsim.calibration.ModePurposeEventHandler;
 import edu.byu.cougarsim.calibration.TransitBoardingsEventHandler;
 import edu.byu.cougarsim.calibration.TravelTimeEventHandler;
 import org.matsim.api.core.v01.Scenario;
@@ -70,6 +71,7 @@ public class RunMatsim {
 				this.addControlerListenerBinding().to(CalibrationControlerListener.class);
 				this.bind(TransitBoardingsEventHandler.class);
 				this.bind(TravelTimeEventHandler.class);
+				this.bind(ModePurposeEventHandler.class);
 			}
 		});
 		// ---

@@ -33,18 +33,23 @@ public class CalibrationControlerListener implements StartupListener, IterationE
     private TravelTimeEventHandler timeEventHandler;
 
     @Inject
+    private ModePurposeEventHandler modePurposeEventHandler;
+
+    @Inject
     EventsManager events;
 
     private static final String FILENAME_COEFFICIENTVALUES = "coefficient_values.csv";
     private static final String FILENAME_HBWFILE = "hbw_modeshare.csv";
     private static final String FILENAME_BOARDINGS = "transitline_boardings.csv";
     private static final String FILENAME_TIMEBINS = "timebins.csv";
+    private static final String FILENAME_PURPOSEMODES = "trips_by_purpose_and_mode.csv";
     private BufferedWriter hbwOut;
     private BufferedWriter constantsOut;
     private String constantsFileName;
     private String hbwFileName;
     private File transitFileName;
     private File timeFileName;
+    private File modePurposeFileName;
 
     private static final Logger log = Logger.getLogger(CalibrationControlerListener.class);
     HashMap<Integer, HashMap<String, HashMap<String, Integer>>> iterationPurposeCount = new HashMap<>();
@@ -81,9 +86,11 @@ public class CalibrationControlerListener implements StartupListener, IterationE
         this.hbwOut = IOUtils.getBufferedWriter(hbwFileName);
         this.transitFileName = new File(controlerIO.getOutputFilename(FILENAME_BOARDINGS));
         this.timeFileName = new File(controlerIO.getOutputFilename(FILENAME_TIMEBINS));
+        this.modePurposeFileName = new File(controlerIO.getOutputFilename(FILENAME_PURPOSEMODES));
 
         this.eventHandler = new TransitBoardingsEventHandler(scenario);
         this.timeEventHandler = new TravelTimeEventHandler();
+        this.modePurposeEventHandler = new ModePurposeEventHandler();
         this.lastIteration = controlerConfigGroup.getLastIteration();
     }
 
@@ -100,6 +107,7 @@ public class CalibrationControlerListener implements StartupListener, IterationE
         this.modes = planCalcScoreConfigGroup.getAllModes();
         this.events.addHandler(eventHandler);
         this.events.addHandler(timeEventHandler);
+        this.events.addHandler(modePurposeEventHandler);
 
         try {
             this.hbwOut.write("Iteration");
@@ -145,6 +153,7 @@ public class CalibrationControlerListener implements StartupListener, IterationE
         if(!iterationNo.equals(lastIteration)) {
            eventHandler.reset(iterationNo);
            timeEventHandler.reset(iterationNo);
+           modePurposeEventHandler.reset(iterationNo);
         }
 
     }
@@ -241,6 +250,7 @@ public class CalibrationControlerListener implements StartupListener, IterationE
             this.hbwOut.close();
             eventHandler.writeLineBoardings(this.transitFileName);
             timeEventHandler.writeTimeBins(this.timeFileName);
+            modePurposeEventHandler.writePurposeModeCounts(this.modePurposeFileName);
         } catch (IOException e) {
             e.printStackTrace();
         }
